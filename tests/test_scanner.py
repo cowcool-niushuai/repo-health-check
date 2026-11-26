@@ -1,6 +1,10 @@
 """Unit tests for the four-dimension scanner and scoring engine."""
 
+import json
+import os
 from pathlib import Path
+
+import pytest
 
 from app.scanner import mask_secret, scan_repository
 from app.scorer import calculate_score
@@ -129,4 +133,75 @@ def test_noise_filtering_and_deduplication(tmp_path: Path):
     out = scan_repository(tmp_path)
     assert len(out.risks) == 2
     assert all(r.file == "app.py" for r in out.risks)
+
+
+def test_all_secrets_on_one_line_are_masked(tmp_path: Path):
+    (tmp_path / "app.py").write_text(
+        'A = "sk-proj-abcdefghijklmnopqrstuvwxyz123456"; B = "AKIAABCDEFGHIJKLMNOP"\n',
+        encoding="utf-8",
+    )
+
+    out = scan_repository(tmp_path)
+    secret_risks = [r for r in out.risks if r.category == "secret"]
+    assert len(secret_risks) == 1
+    snippet = secret_risks[0].snippet or ""
+    assert "sk-pro****3456" in snippet
+    assert "AKIAAB****MNOP" in snippet
+    assert "AKIAABCDEFGHIJKLMNOP" not in snippet
+    assert "abcdefghijklmnopqrstuvwxyz" not in snippet
+
+
+def test_escaped_backslash_windows_paths_detected(tmp_path: Path):
+    (tmp_path / "app.py").write_text(
+        'A = "C:\\\\Users\\\\bob\\\\project\\\\data.csv"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "conf.json").write_text(
+        '{"p":"C:\\\\Users\\\\bob\\\\project"}\n',
+        encoding="utf-8",
+    )
+
+    out = scan_repository(tmp_path)
+    path_files = [r.file for r in out.risks if r.category == "hardcoded_path"]
+    assert "app.py" in path_files
+    assert "conf.json" in path_files
+
+
+def test_symlink_outside_repo_is_not_read(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "README.md").write_text("# Demo\n", encoding="utf-8")
+    outside = tmp_path / "outside_secret.txt"
+    outside.write_text("sk-proj-HOSTONLYSECRETvalue1234567890\n", encoding="utf-8")
+
+    try:
+        (repo / "linked.py").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlink is not supported on this platform")
+
+    out = scan_repository(repo)
+    assert not any(r.category == "secret" for r in out.risks)
+
+
+def test_non_utf8_filename_does_not_break_json(tmp_path: Path):
+    (tmp_path / "README.md").write_text("# Demo\n", encoding="utf-8")
+    bad_path = os.path.join(os.fsencode(str(tmp_path)), b"bad\xffname.py")
+    with open(bad_path, "wb") as fh:
+        fh.write(b'A = "/home/bob/data"\n')
+
+    out = scan_repository(tmp_path)
+    payload = json.dumps([r.model_dump() for r in out.risks], ensure_ascii=False)
+    payload.encode("utf-8")  # must not raise UnicodeEncodeError
+    assert any(r.category == "hardcoded_path" for r in out.risks)
+
+
+def test_windows_script_in_test_fixtures_is_ignored(tmp_path: Path):
+    (tmp_path / "README.md").write_text("# Demo\n## Install\npip install .\n## Usage\nrun\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("fastapi\n", encoding="utf-8")
+    (tmp_path / "Dockerfile").write_text("FROM python:3.12-slim\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "fixture.bat").write_text("@echo off\n", encoding="utf-8")
+
+    out = scan_repository(tmp_path)
+    assert not any(r.category == "windows_script" for r in out.risks)
 

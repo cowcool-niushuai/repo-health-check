@@ -23,3 +23,14 @@
   2. 增加 `_has_cross_platform_sibling()`，同目录已有 `Makefile` / `.sh` 的 `.bat` 脚本降级为 `low`；
   3. 增加 `_COMMENT_LINE_RE` 跳过源码纯注释行，并修复 `_UNIX_HOME_RE` 防止把 `../../../../home/...` 相对路径误判为绝对路径。
 - **验证结果**：重新实测 `pallets/flask` 与 `psf/requests` 均恢复为 **100 分（A 级）**，同时仍能准确列出测试夹具与文档路径作为 `low` 级别提示；`pytest` 6 项测试全部通过。
+
+### 记录 3：同一行多种密钥只脱敏了第一种
+- **AI 初始行为**：密钥扫描命中一行后，仅用当前命中的那一条正则做 `_mask_line_secrets(line, pattern)`，随后 `break`。
+- **被发现的问题**：当一行同时出现 `sk-...` 与 `AKIA...` 时，`AKIA...` 会以明文进入接口响应和页面，直接违反「返回前端前必须脱敏」的安全要求。
+- **人工修正**：将脱敏函数改为遍历全部密钥正则后再截断，并新增同行双密钥的回归测试。
+
+### 记录 4：端到端安全测试发现 SSRF、符号链接越界与非 UTF-8 文件名 500
+- **AI 初始行为**：`/api/scan` 信任请求体里的 `llm_base_url` 并直接请求；扫描器用 `read_text()` 跟随仓库内符号链接；响应中的文件路径直接使用 `os.walk` 解码结果。
+- **被发现的问题**：① 用户可让服务端 POST 到 `127.0.0.1`/内网地址（实测成功命中本地监听器）并回显响应；② 仓库内 `secret.py -> /tmp/hostsecret.txt` 可读到克隆目录外的宿主文件；③ 非 UTF-8 文件名使 `json.dumps(...).encode()` 抛 `UnicodeEncodeError`，接口返回 500（已用 TestClient 复现）。
+- **人工修正**：新增 `_validate_llm_base_url()` 内网地址拦截与 `follow_redirects=False`；新增 `_is_within_root()` 读取前校验真实路径；新增 `_safe_text()` 清洗文件名；同时补充 `.dockerignore` 防止 `.env` 与 `.venv` 进入镜像。
+- **验证结果**：三类问题均补充回归测试，`pytest` 由 10 项增至 16 项并全部通过；`pallets/flask`、`psf/requests` 仍为 100 分。

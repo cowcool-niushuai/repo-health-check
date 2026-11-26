@@ -1,12 +1,43 @@
 """AI onboarding advisor with OpenAI-compatible LLM support and rule-based fallback."""
 
 import json
+import ipaddress
 import os
 import re
+import socket
+from urllib.parse import urlparse
 
 import httpx
 
 from app.models import AIAdvice, CompletenessDetail, RiskItem, ScoreBreakdown
+
+_BLOCKED_LLM_HOSTS = {"localhost", "localhost.localdomain", "metadata.google.internal"}
+
+
+def _validate_llm_base_url(base_url: str) -> str:
+    """Reject user-supplied LLM base URLs that point at local or internal networks (SSRF)."""
+    parsed = urlparse(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("LLM Base URL 格式无效")
+
+    host = parsed.hostname.lower()
+    if host in _BLOCKED_LLM_HOSTS:
+        raise ValueError("LLM Base URL 不允许指向本地地址")
+
+    try:
+        resolved = {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except socket.gaierror:
+        # Let the actual HTTP call surface the DNS error; it is handled by the fallback.
+        return base_url
+
+    for raw_ip in resolved:
+        try:
+            ip = ipaddress.ip_address(raw_ip)
+        except ValueError:
+            continue
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified or not ip.is_global:
+            raise ValueError("LLM Base URL 不允许指向内网或保留地址")
+    return base_url
 
 
 def _parse_json_content(raw: str) -> dict:
@@ -91,6 +122,16 @@ async def generate_advice(
 
     base_url = (llm_base_url or os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")).strip().rstrip("/")
     model = (llm_model or os.getenv("LLM_MODEL", "gpt-4o-mini")).strip()
+    try:
+        base_url = _validate_llm_base_url(base_url)
+    except ValueError as exc:
+        return _rule_based_advice(
+            repo_name,
+            completeness,
+            score,
+            risks,
+            error_note=f"{exc}，已自动降级为规则引擎建议。",
+        )
 
     risk_summary = [
         f"[{r.severity}] {r.category}: {r.file} - {r.title}"
@@ -110,12 +151,7 @@ async def generate_advice(
     )
 
     try:
-        try:
-            client_cm = httpx.AsyncClient(timeout=15.0)
-        except ImportError:
-            client_cm = httpx.AsyncClient(timeout=15.0, trust_env=False)
-
-        async with client_cm as client:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],

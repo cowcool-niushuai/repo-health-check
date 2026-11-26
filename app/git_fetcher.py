@@ -53,14 +53,17 @@ def validate_git_url(raw_url: str) -> str:
 
     try:
         ip = ipaddress.ip_address(hostname)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+        if not ip.is_global:
             raise GitFetchError("不支持访问私有或保留 IP 地址。")
     except ValueError:
         try:
             addr_infos = socket.getaddrinfo(hostname, None)
             for info in addr_infos:
-                resolved_ip = ipaddress.ip_address(info[4][0])
-                if resolved_ip.is_private or resolved_ip.is_loopback or resolved_ip.is_link_local or resolved_ip.is_reserved:
+                try:
+                    resolved_ip = ipaddress.ip_address(info[4][0])
+                except ValueError:
+                    continue
+                if not resolved_ip.is_global:
                     raise GitFetchError("目标域名解析到私有或保留 IP 地址，已拦截。")
         except socket.gaierror:
             pass

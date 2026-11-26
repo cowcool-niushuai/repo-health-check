@@ -9,7 +9,7 @@
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white)
 ![ECharts](https://img.shields.io/badge/Apache%20ECharts-5.5-AA344D?logo=apacheecharts&logoColor=white)
-![Tests](https://img.shields.io/badge/pytest-10%20passed-1E7A60)
+![Tests](https://img.shields.io/badge/pytest-16%20passed-1E7A60)
 
 [快速开始](#-快速开始) · [核心能力](#-核心能力) · [评分模型](#-评分体系) · [更新跟踪设计](#-更新跟踪设计说明) · [AI 使用记录](./AI_USAGE.md)
 
@@ -117,6 +117,7 @@ repo-health-check/
 │   └── 错误台账.md        # 开发排障与误报调优记录
 ├── AI_USAGE.md           # AI 工具使用、验证方法与「AI 答错纠错」记录
 ├── Dockerfile
+├── .dockerignore        # 排除 .venv/.git/.env，避免本地密钥被打进镜像
 ├── docker-compose.yml
 ├── pyproject.toml
 └── requirements.txt

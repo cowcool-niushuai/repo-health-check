@@ -92,3 +92,30 @@ def test_ai_advisor_llm_and_error_fallback():
         fallback = asyncio.run(generate_advice("demo/repo", ["README.md"], "demo", comp, score, [], llm_api_key="sk-test"))
     assert fallback.source == "rule_engine"
     assert fallback.error_note is not None
+
+
+def test_llm_base_url_rejects_internal_targets():
+    comp = CompletenessDetail(has_readme=True, has_dependencies=True, has_startup=True)
+    score = ScoreBreakdown(
+        overall_score=90,
+        grade="A",
+        dimension_scores={"completeness": 100, "cross_platform": 100, "portability": 100, "security": 100},
+    )
+
+    with patch("app.ai_advisor.httpx.AsyncClient") as mock_client:
+        advice = asyncio.run(
+            generate_advice(
+                "demo/repo",
+                ["README.md"],
+                "demo",
+                comp,
+                score,
+                [],
+                llm_api_key="sk-test",
+                llm_base_url="http://127.0.0.1:8123/v1",
+            )
+        )
+
+    assert advice.source == "rule_engine"
+    assert "内网" in (advice.error_note or "")
+    mock_client.assert_not_called()

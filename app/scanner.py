@@ -89,7 +89,11 @@ SENSITIVE_EXACT_FILES = {
 }
 SENSITIVE_EXTS = {".pem", ".key", ".p12", ".pfx"}
 
-_WIN_DRIVE_RE = re.compile(r'(?<![A-Za-z0-9_])([A-Za-z]:[/\\](?:[^\\/:*?"<>|\r\n\s]+[/\\])*[^\\/:*?"<>|\r\n\s/\\][^\\/:*?"<>|\r\n\s]*)')
+_WIN_DRIVE_RE = re.compile(
+    r'(?<![A-Za-z0-9_])([A-Za-z]:(?:[/\\]{1,2})'
+    r'(?:[^\\/:*?"<>|\r\n\s]+[/\\]{1,2})*'
+    r'[^\\/:*?"<>|\r\n\s/\\][^\\/:*?"<>|\r\n\s]*)'
+)
 _UNIX_USER_PATH_RE = re.compile(r'(?<![A-Za-z0-9_:.])(/(?:Users|home|root)/[A-Za-z0-9._-]+(?:/[^\s"\'<>|)\\]+)*)')
 _UNIX_SYS_PATH_RE = re.compile(r'(?<![A-Za-z0-9_:.])(/(?:var/www|opt|srv)/[A-Za-z0-9._-]+(?:/[^\s"\'<>|)\\]+)*)')
 _WIN_CMD_RE = re.compile(r"\b(cmd\s+/c|powershell(?:\.exe)?|set\s+[A-Z_][A-Z0-9_]*=)", re.IGNORECASE)
@@ -143,9 +147,26 @@ def mask_secret(value: str) -> str:
     return f"{value[:6]}****{value[-4:]}"
 
 
-def _mask_line_secrets(line: str, pattern: re.Pattern[str]) -> str:
-    """Replace matched secret substrings in a line with masked values."""
-    return pattern.sub(lambda m: mask_secret(m.group(0)), line)
+def _mask_line_secrets(line: str) -> str:
+    """Mask every known secret pattern in a line before it is returned to clients."""
+    masked = line
+    for _, pattern in _SECRET_PATTERNS:
+        masked = pattern.sub(lambda m: mask_secret(m.group(0)), masked)
+    return masked
+
+
+def _is_within_root(file_path: Path, repo_root: Path) -> bool:
+    """Return True only when a file resolves inside the cloned repository."""
+    try:
+        file_path.resolve().relative_to(repo_root)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _safe_text(value: str) -> str:
+    """Make a filesystem-derived string JSON-serializable (drop undecodable bytes)."""
+    return value.encode("utf-8", "replace").decode("utf-8")
 
 
 def _is_placeholder(line: str) -> bool:
@@ -170,8 +191,10 @@ def _has_cross_platform_sibling(file_path: Path) -> bool:
     return False
 
 
-def _analyze_readme(readme_path: Path) -> tuple[dict[str, bool], str]:
+def _analyze_readme(readme_path: Path, repo_root: Path) -> tuple[dict[str, bool], str]:
     """Check whether README covers install, usage, and env sections."""
+    if not _is_within_root(readme_path, repo_root):
+        return {"install": False, "usage": False, "env": False}, ""
     try:
         text = readme_path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
@@ -186,8 +209,10 @@ def _analyze_readme(readme_path: Path) -> tuple[dict[str, bool], str]:
     return sections, text[:1500]
 
 
-def _check_package_json_scripts(pkg_path: Path, rel_path: str, risks: list[RiskItem]) -> bool:
+def _check_package_json_scripts(pkg_path: Path, rel_path: str, repo_root: Path, risks: list[RiskItem]) -> bool:
     """Inspect package.json for startup scripts and Windows-only commands."""
+    if not _is_within_root(pkg_path, repo_root):
+        return False
     try:
         data = json.loads(pkg_path.read_text(encoding="utf-8", errors="ignore"))
     except (OSError, json.JSONDecodeError):
@@ -220,10 +245,13 @@ def _scan_file_lines(
     ext: str,
     is_test_fixture: bool,
     is_sensitive_file: bool,
+    repo_root: Path,
     risks: list[RiskItem],
 ) -> bool:
     """Scan a single text file line-by-line for hardcoded paths and secrets."""
     if ext in BINARY_OR_LOCK_EXTS or lower_name in LOCK_FILENAMES:
+        return False
+    if not _is_within_root(file_path, repo_root):
         return False
 
     try:
@@ -289,7 +317,7 @@ def _scan_file_lines(
                 dedup_key = ("secret", mask_secret(secret_match.group(0)))
                 if dedup_key not in seen_matches:
                     seen_matches.add(dedup_key)
-                    masked_snippet = _mask_line_secrets(stripped, pattern)[:160]
+                    masked_snippet = _mask_line_secrets(stripped)[:160]
                     risks.append(
                         RiskItem(
                             category="secret",
@@ -369,10 +397,12 @@ def scan_repository(repo_root: Path) -> ScanOutput:
     files_scanned = 0
 
     top_level_entries = sorted(
-        p.name + ("/" if p.is_dir() else "")
+        _safe_text(p.name) + ("/" if p.is_dir() else "")
         for p in repo_root.iterdir()
         if p.name != ".git"
     )[:30]
+
+    repo_root_resolved = repo_root.resolve()
 
     for dirpath, dirnames, filenames in os.walk(repo_root):
         dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
@@ -381,7 +411,7 @@ def scan_repository(repo_root: Path) -> ScanOutput:
 
         for filename in sorted(filenames):
             file_path = Path(dirpath) / filename
-            rel_path = str(file_path.relative_to(repo_root)).replace("\\", "/")
+            rel_path = _safe_text(str(file_path.relative_to(repo_root)).replace("\\", "/"))
             lower_name = filename.lower()
             ext = file_path.suffix.lower()
 
@@ -390,7 +420,7 @@ def scan_repository(repo_root: Path) -> ScanOutput:
             # Completeness checks (skip test/example subdirs for dependency & startup manifests)
             if is_root and lower_name.startswith("readme") and ext in {"", ".md", ".rst", ".txt"}:
                 readme_files.append(rel_path)
-                sec, excerpt = _analyze_readme(file_path)
+                sec, excerpt = _analyze_readme(file_path, repo_root_resolved)
                 for k, v in sec.items():
                     readme_sections[k] = readme_sections[k] or v
                 if not readme_excerpt and excerpt:
@@ -403,14 +433,14 @@ def scan_repository(repo_root: Path) -> ScanOutput:
                 startup_files.append(rel_path)
 
             if not is_test_fixture and lower_name == "package.json":
-                if _check_package_json_scripts(file_path, rel_path, risks):
+                if _check_package_json_scripts(file_path, rel_path, repo_root_resolved, risks):
                     startup_files.append(f"{rel_path} (scripts)")
 
-            # Windows-only script detection (skip if cross-platform sibling exists or in docs)
+            # Windows-only script detection (skip if cross-platform sibling exists, docs, or test fixtures)
             if ext in WINDOWS_SCRIPT_EXTS:
                 has_sibling = _has_cross_platform_sibling(file_path)
                 in_docs = "docs" in {p.lower() for p in Path(rel_path).parts[:-1]}
-                if not has_sibling and not in_docs:
+                if not has_sibling and not in_docs and not is_test_fixture:
                     risks.append(
                         RiskItem(
                             category="windows_script",
@@ -436,7 +466,16 @@ def scan_repository(repo_root: Path) -> ScanOutput:
                     )
                 )
 
-            if _scan_file_lines(file_path, rel_path, lower_name, ext, is_test_fixture, is_sensitive_file, risks):
+            if _scan_file_lines(
+                file_path,
+                rel_path,
+                lower_name,
+                ext,
+                is_test_fixture,
+                is_sensitive_file,
+                repo_root_resolved,
+                risks,
+            ):
                 files_scanned += 1
 
     _append_completeness_risks(readme_files, readme_sections, dependency_files, startup_files, risks)

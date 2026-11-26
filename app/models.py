@@ -7,10 +7,10 @@ from pydantic import BaseModel, Field
 class ScanRequest(BaseModel):
     """Incoming scan request payload."""
 
-    repo_url: str = Field(..., min_length=1, description="Public Git repository HTTPS URL")
-    llm_api_key: Optional[str] = Field(default=None, description="Optional OpenAI-compatible API key")
-    llm_base_url: Optional[str] = Field(default=None, description="Optional OpenAI-compatible base URL")
-    llm_model: Optional[str] = Field(default=None, description="Optional LLM model name")
+    repo_url: str = Field(..., min_length=1, max_length=2048, description="Public Git repository HTTPS URL")
+    llm_api_key: Optional[str] = Field(default=None, max_length=512, description="Optional OpenAI-compatible API key")
+    llm_base_url: Optional[str] = Field(default=None, max_length=2048, description="Optional OpenAI-compatible base URL")
+    llm_model: Optional[str] = Field(default=None, max_length=200, description="Optional LLM model name")
 
 
 class RiskItem(BaseModel):
