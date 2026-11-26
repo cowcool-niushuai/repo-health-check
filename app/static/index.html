@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Repo Health Check · Git 仓库接入体检</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --bg: #F5F8F7;
+      --surface: #FFFFFF;
+      --ink: #15201D;
+      --muted: #5A6B65;
+      --line: #DCE5E1;
+      --mint: #59D6B3;
+      --mint-deep: #1E7A60;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--ink);
+      font-family: "Manrope", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .font-serif-display {
+      font-family: "Instrument Serif", "Songti SC", Georgia, serif;
+    }
+    .font-mono-code {
+      font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+  </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-[#59D6B3]/30">
+  <!-- Minimalist Top Bar -->
+  <header class="border-b border-[#DCE5E1] bg-[#F5F8F7]/90 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-5xl mx-auto px-5 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <span class="w-7 h-7 rounded-lg bg-[#15201D] text-white font-bold text-xs flex items-center justify-center relative">
+          RH
+          <span class="w-2 h-2 rounded-full bg-[#59D6B3] absolute -top-0.5 -right-0.5"></span>
+        </span>
+        <span class="font-bold text-sm tracking-tight text-[#15201D]">Repo Health Check</span>
+      </div>
+      <div class="flex items-center gap-4 text-xs text-[#5A6B65]">
+        <span class="inline-flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#1E7A60]"></span>
+          服务就绪
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <div class="max-w-5xl mx-auto px-5 py-10">
+    <!-- Flat Editorial Hero (No outer card!) -->
+    <section class="pb-8 border-b border-[#DCE5E1]">
+      <div class="inline-flex items-center gap-2 text-xs text-[#1E7A60] mb-3 font-medium">
+        <span class="w-2 h-2 rounded-full bg-[#59D6B3]"></span>
+        <span>仓库接入前自动化诊断</span>
+      </div>
+      <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight text-[#15201D]">
+        Git 仓库接入体检
+        <span class="font-serif-display italic font-normal text-[#1E7A60] ml-1">Health Check</span>
+      </h1>
+      <p class="text-[#5A6B65] text-sm mt-2 max-w-2xl leading-relaxed">
+        输入公开 Git 仓库链接，自动检测工程完整度、Windows 专用脚本、硬编码路径与密钥泄露风险。
+      </p>
+
+      <form id="scanForm" class="mt-6 flex flex-col sm:flex-row gap-2.5">
+        <div class="relative flex-1">
+          <i data-lucide="git-branch" class="w-4 h-4 text-[#5A6B65] absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+          <input
+            id="repoInput"
+            type="url"
+            required
+            placeholder="https://github.com/owner/repo（支持直接粘贴 /tree/ 或 /blob/ 链接）"
+            class="w-full pl-10 pr-4 py-3 rounded-xl bg-white border border-[#DCE5E1] text-[#15201D] placeholder-[#8FA09A] focus:outline-none focus:border-[#15201D] text-sm font-mono-code transition"
+          />
+        </div>
+        <button
+          id="scanBtn"
+          type="submit"
+          class="px-6 py-3 rounded-xl bg-[#15201D] hover:bg-[#243631] disabled:opacity-50 text-white font-semibold text-sm transition flex items-center justify-center gap-2 min-w-[132px]"
+        >
+          <span class="w-2 h-2 rounded-full bg-[#59D6B3]"></span>
+          <span id="btnText">开始体检</span>
+        </button>
+      </form>
+
+      <div id="historyBar" class="hidden mt-3 flex flex-wrap items-center gap-2 text-xs text-[#5A6B65]">
+        <span>最近：</span>
+        <div id="historyList" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <details class="mt-4 text-xs text-[#5A6B65]">
+        <summary class="cursor-pointer hover:text-[#15201D] select-none inline-flex items-center gap-1.5 font-medium">
+          <i data-lucide="sparkles" class="w-3.5 h-3.5 text-[#1E7A60]"></i>
+          <span>可选：配置 AI 模型参数（不填默认使用规则引擎）</span>
+        </summary>
+        <div class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          <input id="llmApiKey" type="password" placeholder="LLM API Key (如 sk-...)" class="px-3 py-2 rounded-lg bg-white border border-[#DCE5E1] text-[#15201D] focus:outline-none focus:border-[#15201D]" />
+          <input id="llmBaseUrl" type="url" placeholder="Base URL (默认 https://api.openai.com/v1)" class="px-3 py-2 rounded-lg bg-white border border-[#DCE5E1] text-[#15201D] focus:outline-none focus:border-[#15201D]" />
+          <input id="llmModel" type="text" placeholder="模型名 (默认 gpt-4o-mini)" class="px-3 py-2 rounded-lg bg-white border border-[#DCE5E1] text-[#15201D] focus:outline-none focus:border-[#15201D]" />
+        </div>
+      </details>
+
+      <!-- Progress -->
+      <div id="progressBox" class="hidden mt-5">
+        <div class="flex items-center justify-between text-xs text-[#1E7A60] mb-1.5 font-mono-code">
+          <span id="progressLabel">正在校验仓库地址并执行浅克隆...</span>
+          <span id="progressPct">25%</span>
+        </div>
+        <div class="w-full h-1 bg-[#DCE5E1] rounded-full overflow-hidden">
+          <div id="progressBar" class="h-full bg-[#1E7A60] transition-all duration-500" style="width: 25%"></div>
+        </div>
+      </div>
+
+      <!-- Error -->
+      <div id="errorBox" class="hidden mt-4 p-3.5 rounded-xl bg-[#FDF2F2] border border-[#F5C2C2] text-[#B42318] text-sm flex items-start gap-2">
+        <i data-lucide="alert-circle" class="w-4 h-4 shrink-0 mt-0.5"></i>
+        <span id="errorText"></span>
+      </div>
+    </section>
+
+    <!-- Report Body (Flat Editorial Sections, Zero Card Nesting) -->
+    <main id="reportSection" class="hidden">
+      <!-- Meta Strip -->
+      <div class="py-5 border-b border-[#DCE5E1] flex flex-wrap items-center justify-between gap-3 text-sm">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="font-bold text-lg text-[#15201D]" id="metaRepoName"></span>
+          <span class="px-2 py-0.5 rounded bg-white border border-[#DCE5E1] font-mono-code text-xs text-[#1E7A60]" id="metaCommit"></span>
+          <span class="text-xs text-[#5A6B65]" id="metaFiles"></span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-xs text-[#5A6B65] font-mono-code" id="metaTime"></span>
+          <button type="button" id="exportBtn" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-[#EDF3F0] border border-[#DCE5E1] text-xs font-medium text-[#15201D] transition">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>导出报告</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Section 1: Score & Dimensions (Single flat white surface) -->
+      <section class="py-8 border-b border-[#DCE5E1]">
+        <div class="bg-white rounded-2xl border border-[#DCE5E1] p-6 md:p-7">
+          <!-- 4-Dimension Metric Strip (Flat dividers, no inner cards) -->
+          <div id="dimStrip" class="grid grid-cols-2 md:grid-cols-4 gap-6 pb-6 mb-6 border-b border-[#E9EFEC]"></div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            <div class="lg:col-span-5">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-semibold text-[#5A6B65]">接入就绪度评分</span>
+                <span id="gradeBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold"></span>
+              </div>
+              <div id="gaugeChart" class="w-full h-44"></div>
+              <div class="flex justify-center gap-4 text-xs mb-4">
+                <span class="text-[#B42318] font-medium">高危 <b id="countHigh">0</b></span>
+                <span class="text-[#9A6700] font-medium">中危 <b id="countMedium">0</b></span>
+                <span class="text-[#1E7A60] font-medium">低危 <b id="countLow">0</b></span>
+              </div>
+              <div class="pt-3 border-t border-[#E9EFEC]">
+                <div class="text-xs font-semibold text-[#5A6B65] mb-1.5">扣分明细</div>
+                <ul id="deductionList" class="space-y-1 text-xs text-[#15201D]"></ul>
+              </div>
+            </div>
+
+            <div class="lg:col-span-7">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-semibold text-[#5A6B65]">四维度能力雷达图</span>
+                <span class="text-xs text-[#5A6B65]">满分 100</span>
+              </div>
+              <div id="radarChart" class="w-full h-64"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 2: AI Advice & Completeness (Flat 2-column layout, no boxes inside boxes) -->
+      <section class="py-8 border-b border-[#DCE5E1] grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div class="lg:col-span-7">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-base font-bold text-[#15201D] flex items-center gap-2">
+              <i data-lucide="bot" class="w-4 h-4 text-[#1E7A60]"></i>
+              <span>AI 接入建议</span>
+            </h2>
+            <span id="adviceSourceBadge" class="px-2.5 py-0.5 rounded-full text-xs font-mono-code bg-[#E6F7F1] text-[#1E7A60] border border-[#59D6B3]/50"></span>
+          </div>
+          <div id="adviceErrorNote" class="hidden mb-3 px-3 py-2 rounded-lg bg-[#FFF8EB] border border-[#F2D399] text-[#9A6700] text-xs"></div>
+          <p id="adviceSummary" class="text-sm text-[#15201D] mb-5 leading-relaxed"></p>
+
+          <div class="mb-5">
+            <div class="text-xs font-semibold text-[#5A6B65] mb-2">推荐启动 / 验证命令</div>
+            <div id="adviceCommands" class="space-y-2"></div>
+          </div>
+
+          <div>
+            <div class="text-xs font-semibold text-[#5A6B65] mb-2">优先整改事项</div>
+            <ul id="adviceActions" class="list-disc list-inside space-y-1.5 text-sm text-[#15201D]"></ul>
+          </div>
+        </div>
+
+        <div class="lg:col-span-5 lg:border-l lg:border-[#DCE5E1] lg:pl-8">
+          <h2 class="text-base font-bold text-[#15201D] mb-4 flex items-center gap-2">
+            <i data-lucide="check-circle-2" class="w-4 h-4 text-[#1E7A60]"></i>
+            <span>工程完整度清单</span>
+          </h2>
+          <div id="completenessGrid" class="divide-y divide-[#DCE5E1] text-sm"></div>
+        </div>
+      </section>
+
+      <!-- Section 3: Flat Risk Table/List (No card-per-row!) -->
+      <section id="riskSection" class="py-8">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
+          <h2 class="text-base font-bold text-[#15201D]">主要风险清单</h2>
+          <div class="flex flex-wrap gap-2 text-xs">
+            <input id="riskSearchInput" type="text" placeholder="搜索文件名或关键字..." class="px-3 py-1.5 rounded-lg border border-[#DCE5E1] bg-white text-[#15201D] focus:outline-none focus:border-[#15201D]" />
+            <select id="severityFilter" class="px-3 py-1.5 rounded-lg border border-[#DCE5E1] bg-white text-[#15201D]">
+              <option value="all">全部级别</option>
+              <option value="high">高危 (High)</option>
+              <option value="medium">中危 (Medium)</option>
+              <option value="low">低危 (Low)</option>
+            </select>
+            <select id="categoryFilter" class="px-3 py-1.5 rounded-lg border border-[#DCE5E1] bg-white text-[#15201D]">
+              <option value="all">全部类别</option>
+              <option value="secret">密钥与敏感信息</option>
+              <option value="hardcoded_path">硬编码路径</option>
+              <option value="windows_script">Windows 专用脚本</option>
+              <option value="completeness">工程完整度</option>
+            </select>
+          </div>
+        </div>
+        <div id="riskList" class="bg-white rounded-2xl border border-[#DCE5E1] divide-y divide-[#E9EFEC]"></div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    const scanForm = document.getElementById("scanForm");
+    const repoInput = document.getElementById("repoInput");
+    const scanBtn = document.getElementById("scanBtn");
+    const btnText = document.getElementById("btnText");
+    const progressBox = document.getElementById("progressBox");
+    const progressLabel = document.getElementById("progressLabel");
+    const progressBar = document.getElementById("progressBar");
+    const progressPct = document.getElementById("progressPct");
+    const errorBox = document.getElementById("errorBox");
+    const errorText = document.getElementById("errorText");
+    const reportSection = document.getElementById("reportSection");
+    const severityFilter = document.getElementById("severityFilter");
+    const categoryFilter = document.getElementById("categoryFilter");
+    const riskSearchInput = document.getElementById("riskSearchInput");
+
+    let gaugeChart = null;
+    let radarChart = null;
+    let currentRisks = [];
+    let currentReport = null;
+    let riskDisplayLimit = 50;
+    let progressTimer = null;
+
+    const HISTORY_KEY = "rhc_scan_history_v1";
+
+    const CATEGORY_LABELS = {
+      secret: "密钥/敏感信息",
+      hardcoded_path: "硬编码路径",
+      windows_script: "Windows 脚本",
+      completeness: "完整度",
+    };
+
+    const SEVERITY_STYLES = {
+      high: "bg-[#FDF2F2] text-[#B42318] border-[#F5C2C2]",
+      medium: "bg-[#FFF8EB] text-[#9A6700] border-[#F2D399]",
+      low: "bg-[#E6F7F1] text-[#1E7A60] border-[#59D6B3]/60",
+    };
+
+    const GRADE_STYLES = {
+      A: "bg-[#E6F7F1] text-[#1E7A60] border border-[#59D6B3]/60",
+      B: "bg-[#EEF6FF] text-[#1D4ED8] border border-[#BFDBFE]",
+      C: "bg-[#FFF8EB] text-[#9A6700] border border-[#F2D399]",
+      D: "bg-[#FDF2F2] text-[#B42318] border border-[#F5C2C2]",
+    };
+
+    document.getElementById("exportBtn").addEventListener("click", () => {
+      if (!currentReport) return;
+      const r = currentReport;
+      const md = [
+        `# 仓库接入体检报告：${r.meta.repo_name}`,
+        `- 仓库地址：${r.meta.repo_url}`,
+        `- 基线提交：\`${r.meta.branch} @ ${r.meta.commit_sha}\``,
+        `- 扫描时间：${r.meta.scanned_at}`,
+        `- 接入就绪度评分：**${r.score.overall_score}/100 (${r.score.grade} 级)**`,
+        ``,
+        `## AI 接入建议 (${r.ai_advice.source})`,
+        r.ai_advice.summary,
+        ``,
+        `## 主要风险清单 (${r.risk_counts.total} 项)`,
+        ...r.risks.map((x) => `- **[${x.severity.toUpperCase()}]** (${x.category}) \`${x.file}${x.line ? ":" + x.line : ""}\` - ${x.title}：${x.suggestion}`),
+      ].join("\n");
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `health-report-${r.meta.short_sha}.md`;
+      a.click();
+    });
+
+    severityFilter.addEventListener("change", renderRisks);
+    categoryFilter.addEventListener("change", renderRisks);
+    riskSearchInput.addEventListener("input", renderRisks);
+
+    scanForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const url = repoInput.value.trim();
+      if (!url) return;
+      await runScan("/api/scan", {
+        repo_url: url,
+        llm_api_key: document.getElementById("llmApiKey").value.trim() || null,
+        llm_base_url: document.getElementById("llmBaseUrl").value.trim() || null,
+        llm_model: document.getElementById("llmModel").value.trim() || null,
+      });
+    });
+
+    function startProgress() {
+      const stages = [
+        { pct: 25, text: "正在校验仓库地址并执行浅克隆..." },
+        { pct: 55, text: "正在遍历源码目录，检测完整度与 Windows 脚本..." },
+        { pct: 80, text: "正在扫描硬编码路径与密钥泄露风险..." },
+        { pct: 92, text: "正在生成接入就绪度评分与 AI 建议..." },
+      ];
+      let idx = 0;
+      progressBox.classList.remove("hidden");
+      progressBar.style.width = `${stages[0].pct}%`;
+      progressPct.textContent = `${stages[0].pct}%`;
+      progressLabel.textContent = stages[0].text;
+
+      progressTimer = setInterval(() => {
+        idx = Math.min(idx + 1, stages.length - 1);
+        progressBar.style.width = `${stages[idx].pct}%`;
+        progressPct.textContent = `${stages[idx].pct}%`;
+        progressLabel.textContent = stages[idx].text;
+      }, 1400);
+    }
+
+    function stopProgress() {
+      if (progressTimer) clearInterval(progressTimer);
+      progressBox.classList.add("hidden");
+    }
+
+    async function runScan(endpoint, payload) {
+      errorBox.classList.add("hidden");
+      scanBtn.disabled = true;
+      btnText.textContent = "体检中...";
+      startProgress();
+
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "扫描失败，请检查仓库地址。");
+        }
+        saveHistory(data);
+        renderReport(data);
+      } catch (err) {
+        errorText.textContent = err.message;
+        errorBox.classList.remove("hidden");
+      } finally {
+        stopProgress();
+        scanBtn.disabled = false;
+        btnText.textContent = "开始体检";
+      }
+    }
+
+    function saveHistory(report) {
+      try {
+        const list = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]")
+          .filter((item) => item.meta.repo_url !== report.meta.repo_url);
+        list.unshift(report);
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, 5)));
+        renderHistory();
+      } catch (_) {}
+    }
+
+    function renderHistory() {
+      try {
+        const list = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+        const bar = document.getElementById("historyBar");
+        const container = document.getElementById("historyList");
+        if (!list.length) {
+          bar.classList.add("hidden");
+          return;
+        }
+        bar.classList.remove("hidden");
+        container.innerHTML = "";
+        list.forEach((item) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "underline decoration-[#DCE5E1] underline-offset-4 hover:text-[#15201D] hover:decoration-[#59D6B3] transition";
+          btn.textContent = `${item.meta.repo_name} (${item.score.overall_score})`;
+          btn.addEventListener("click", () => {
+            repoInput.value = item.meta.repo_url;
+            renderReport(item);
+          });
+          container.appendChild(btn);
+        });
+      } catch (_) {}
+    }
+
+    function renderReport(report) {
+      currentReport = report;
+      reportSection.classList.remove("hidden");
+
+      document.getElementById("metaRepoName").textContent = report.meta.repo_name;
+      document.getElementById("metaCommit").textContent = `${report.meta.branch} @ ${report.meta.short_sha}`;
+      document.getElementById("metaFiles").textContent = `已扫描 ${report.meta.files_scanned} 个文本文件`;
+      document.getElementById("metaTime").textContent = report.meta.scanned_at;
+
+      // Flat 4-Dimension Metric Strip
+      const dims = report.score.dimension_scores;
+      const countByCat = (cat) => report.risks.filter((r) => r.category === cat).length;
+      const metrics = [
+        { cat: "completeness", title: "工程完整度", score: dims.completeness, count: countByCat("completeness"), unit: "项提示" },
+        { cat: "windows_script", title: "Windows 脚本", score: dims.cross_platform, count: countByCat("windows_script"), unit: "处脚本" },
+        { cat: "hardcoded_path", title: "硬编码路径", score: dims.portability, count: countByCat("hardcoded_path"), unit: "处路径" },
+        { cat: "secret", title: "密钥安全", score: dims.security, count: countByCat("secret"), unit: "处风险" },
+      ];
+      document.getElementById("dimStrip").innerHTML = metrics
+        .map((m) => `
+          <button type="button" data-cat="${m.cat}" class="dim-metric text-left group">
+            <div class="text-xs text-[#5A6B65] group-hover:text-[#1E7A60] transition flex items-center justify-between">
+              <span>${m.title}</span>
+              <span class="opacity-0 group-hover:opacity-100 text-[11px]">筛选 →</span>
+            </div>
+            <div class="flex items-baseline gap-2 mt-1">
+              <span class="text-2xl font-extrabold text-[#15201D]">${m.score}</span>
+              <span class="text-xs text-[#5A6B65] font-mono-code">/ 100 · ${m.count} ${m.unit}</span>
+            </div>
+          </button>`)
+        .join("");
+
+      document.querySelectorAll(".dim-metric").forEach((el) => {
+        el.addEventListener("click", () => {
+          categoryFilter.value = el.dataset.cat;
+          renderRisks();
+          document.getElementById("riskSection").scrollIntoView({ behavior: "smooth" });
+        });
+      });
+
+      const gradeBadge = document.getElementById("gradeBadge");
+      gradeBadge.textContent = `${report.score.grade} 级`;
+      gradeBadge.className = `px-2.5 py-0.5 rounded-full text-xs font-semibold ${GRADE_STYLES[report.score.grade] || ""}`;
+
+      document.getElementById("countHigh").textContent = report.risk_counts.high || 0;
+      document.getElementById("countMedium").textContent = report.risk_counts.medium || 0;
+      document.getElementById("countLow").textContent = report.risk_counts.low || 0;
+
+      const deductionList = document.getElementById("deductionList");
+      deductionList.innerHTML = report.score.deductions.length
+        ? report.score.deductions.map((d) => `<li>• ${escapeHtml(d)}</li>`).join("")
+        : `<li class="text-[#1E7A60]">• 无扣分项，工程规范良好</li>`;
+
+      renderGaugeChart(report.score.overall_score);
+      renderRadarChart(report.score.dimension_scores);
+
+      // AI Advice
+      const aiScoreLabel = report.ai_advice.ai_score !== null && report.ai_advice.ai_score !== undefined
+        ? ` · AI ${report.ai_advice.ai_score}/100`
+        : "";
+      document.getElementById("adviceSourceBadge").textContent =
+        (report.ai_advice.source === "llm" ? "AI 大模型" : "规则引擎") + aiScoreLabel;
+
+      const adviceErrorNote = document.getElementById("adviceErrorNote");
+      if (report.ai_advice.error_note) {
+        adviceErrorNote.textContent = report.ai_advice.error_note;
+        adviceErrorNote.classList.remove("hidden");
+      } else {
+        adviceErrorNote.classList.add("hidden");
+      }
+
+      document.getElementById("adviceSummary").textContent = report.ai_advice.summary;
+      document.getElementById("adviceCommands").innerHTML = report.ai_advice.recommended_commands
+        .map((cmd) => `
+          <div class="flex items-center justify-between gap-2 font-mono-code text-xs bg-white border border-[#DCE5E1] text-[#15201D] px-3 py-2 rounded-lg">
+            <span class="truncate">${escapeHtml(cmd)}</span>
+            <button type="button" data-copy="${escapeHtml(cmd)}" class="copy-btn shrink-0 px-2 py-0.5 rounded bg-[#F5F8F7] hover:bg-[#DCE5E1]/60 text-[#15201D] text-[11px] transition">复制</button>
+          </div>`)
+        .join("");
+
+      document.querySelectorAll(".copy-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          await navigator.clipboard.writeText(btn.dataset.copy);
+          btn.textContent = "已复制 ✓";
+          setTimeout(() => (btn.textContent = "复制"), 1500);
+        });
+      });
+
+      document.getElementById("adviceActions").innerHTML = report.ai_advice.top_actions
+        .map((act) => `<li>${escapeHtml(act)}</li>`)
+        .join("");
+
+      // Completeness (Flat list rows)
+      const c = report.completeness;
+      const items = [
+        { label: "README 文档", ok: c.has_readme, files: c.readme_files },
+        { label: "依赖清单", ok: c.has_dependencies, files: c.dependency_files },
+        { label: "启动脚本 / 容器配置", ok: c.has_startup, files: c.startup_files },
+      ];
+      document.getElementById("completenessGrid").innerHTML = items
+        .map((item) => `
+          <div class="py-3 first:pt-0 last:pb-0">
+            <div class="flex items-center justify-between font-medium text-[#15201D]">
+              <span>${item.label}</span>
+              <span class="text-xs font-mono-code ${item.ok ? "text-[#1E7A60]" : "text-[#9A6700]"}">
+                ${item.ok ? "● 已配备" : "○ 缺失"}
+              </span>
+            </div>
+            ${item.files.length ? `<div class="mt-1 text-xs text-[#5A6B65] font-mono-code truncate">${escapeHtml(item.files.join(", "))}</div>` : ""}
+          </div>`)
+        .join("");
+
+      currentRisks = report.risks || [];
+      riskDisplayLimit = 50;
+      severityFilter.value = "all";
+      categoryFilter.value = "all";
+      riskSearchInput.value = "";
+      renderRisks();
+      lucide.createIcons();
+    }
+
+    function renderRisks() {
+      const sev = severityFilter.value;
+      const cat = categoryFilter.value;
+      const kw = riskSearchInput.value.trim().toLowerCase();
+      const filtered = currentRisks.filter((r) => {
+        if (sev !== "all" && r.severity !== sev) return false;
+        if (cat !== "all" && r.category !== cat) return false;
+        if (kw && !`${r.file} ${r.title} ${r.snippet || ""}`.toLowerCase().includes(kw)) return false;
+        return true;
+      });
+
+      const container = document.getElementById("riskList");
+      if (!filtered.length) {
+        container.innerHTML = `<div class="text-center py-10 text-sm text-[#5A6B65]">当前筛选条件下无风险项</div>`;
+        return;
+      }
+
+      const visible = filtered.slice(0, riskDisplayLimit);
+      const rowsHtml = visible
+        .map((r) => `
+          <div class="p-4 md:px-5 hover:bg-[#F5F8F7]/60 transition">
+            <div class="flex flex-wrap items-center gap-2 mb-1">
+              <span class="px-2 py-0.5 rounded text-[11px] font-semibold border ${SEVERITY_STYLES[r.severity]}">${r.severity.toUpperCase()}</span>
+              <span class="text-xs text-[#5A6B65]">${CATEGORY_LABELS[r.category] || r.category}</span>
+              <span class="font-semibold text-sm text-[#15201D]">${escapeHtml(r.title)}</span>
+              <span class="text-xs text-[#1E7A60] font-mono-code ml-auto">${escapeHtml(r.file)}${r.line ? `:${r.line}` : ""}</span>
+            </div>
+            ${r.snippet ? `<pre class="font-mono-code text-xs bg-[#F5F8F7] border border-[#DCE5E1] rounded-lg px-3 py-2 overflow-x-auto text-[#15201D] my-2">${escapeHtml(r.snippet)}</pre>` : ""}
+            <div class="text-xs text-[#5A6B65]"><span class="font-semibold text-[#15201D]">建议：</span>${escapeHtml(r.suggestion)}</div>
+          </div>`)
+        .join("");
+
+      const moreHtml = filtered.length > riskDisplayLimit
+        ? `<div class="p-3 text-center"><button type="button" id="showMoreRisksBtn" class="px-4 py-1.5 rounded-lg bg-[#F5F8F7] hover:bg-[#E9EFEC] border border-[#DCE5E1] text-[#15201D] text-xs font-medium transition">显示全部 ${filtered.length} 条风险（当前展示前 ${riskDisplayLimit} 条）</button></div>`
+        : "";
+
+      container.innerHTML = rowsHtml + moreHtml;
+      const moreBtn = document.getElementById("showMoreRisksBtn");
+      if (moreBtn) {
+        moreBtn.addEventListener("click", () => {
+          riskDisplayLimit = filtered.length;
+          renderRisks();
+        });
+      }
+    }
+
+    function renderGaugeChart(score) {
+      if (typeof echarts === "undefined") return;
+      if (gaugeChart) gaugeChart.dispose();
+      gaugeChart = echarts.init(document.getElementById("gaugeChart"));
+      const color = score >= 85 ? "#1E7A60" : score >= 70 ? "#59D6B3" : score >= 50 ? "#D97706" : "#B42318";
+      gaugeChart.setOption({
+        series: [{
+          type: "gauge",
+          startAngle: 200,
+          endAngle: -20,
+          min: 0,
+          max: 100,
+          progress: { show: true, width: 12, roundCap: true, itemStyle: { color } },
+          axisLine: { roundCap: true, lineStyle: { width: 12, color: [[1, "#E9EFEC"]] } },
+          pointer: { show: false },
+          axisTick: { show: false },
+          splitLine: { show: false },
+          axisLabel: { show: false },
+          detail: {
+            valueAnimation: true,
+            offsetCenter: [0, "6%"],
+            fontSize: 32,
+            fontWeight: "bold",
+            color: "#15201D",
+            formatter: "{value}",
+          },
+          data: [{ value: score }],
+        }],
+      });
+    }
+
+    function renderRadarChart(dims) {
+      if (typeof echarts === "undefined") return;
+      if (radarChart) radarChart.dispose();
+      radarChart = echarts.init(document.getElementById("radarChart"));
+      radarChart.setOption({
+        tooltip: {},
+        radar: {
+          indicator: [
+            { name: "工程完整度", max: 100 },
+            { name: "跨平台兼容", max: 100 },
+            { name: "路径可移植性", max: 100 },
+            { name: "密钥安全", max: 100 },
+          ],
+          axisName: { color: "#15201D", fontSize: 12 },
+          splitArea: { areaStyle: { color: ["#F5F8F7", "#FFFFFF"] } },
+          splitLine: { lineStyle: { color: "#DCE5E1" } },
+          axisLine: { lineStyle: { color: "#DCE5E1" } },
+        },
+        series: [{
+          type: "radar",
+          data: [{
+            value: [dims.completeness, dims.cross_platform, dims.portability, dims.security],
+            name: "维度得分",
+            areaStyle: { color: "rgba(89, 214, 179, 0.25)" },
+            lineStyle: { color: "#1E7A60", width: 2 },
+            itemStyle: { color: "#15201D" },
+          }],
+        }],
+      });
+    }
+
+    window.addEventListener("resize", () => {
+      if (gaugeChart) gaugeChart.resize();
+      if (radarChart) radarChart.resize();
+    });
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    renderHistory();
+  </script>
+</body>
+</html>
