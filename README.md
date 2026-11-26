@@ -10,8 +10,9 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white)
 ![ECharts](https://img.shields.io/badge/Apache%20ECharts-5.5-AA344D?logo=apacheecharts&logoColor=white)
 ![Tests](https://img.shields.io/badge/pytest-16%20passed-1E7A60)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-check.cowcoll.top-0969DA)](https://check.cowcoll.top)
 
-[快速开始](#-快速开始) · [核心能力](#-核心能力) · [评分模型](#-评分体系) · [更新跟踪设计](#-更新跟踪设计说明) · [AI 使用记录](./AI_USAGE.md)
+**[🔗 在线体验（https://check.cowcoll.top）](https://check.cowcoll.top)** · [快速开始](#-快速开始) · [核心能力](#-核心能力) · [评分模型](#-评分体系) · [更新跟踪设计](#-更新跟踪设计说明) · [AI 使用记录](./AI_USAGE.md)
 
 </div>
 
