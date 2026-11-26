@@ -1,7 +1,7 @@
 # AI_USAGE.md — AI 辅助开发与验证记录
 
 ## 1. 使用的 AI 工具与分工
-- **AI Coding 助手**：用于项目目录脚手架搭建、FastAPI 后端模块编写（浅克隆、四维扫描器、评分模型、AI 建议模块）、前端可视化页面（Tailwind + Chart.js）以及 `pytest` 测试用例生成。
+- **AI Coding 助手**：用于项目目录脚手架搭建、FastAPI 后端模块编写（浅克隆、四维扫描器、评分模型、AI 建议模块）、前端可视化页面（Tailwind + Apache ECharts + Lucide）以及 `pytest` 测试用例生成。
 
 ## 2. 如何验证 AI 输出
 1. **自动化单元测试与集成测试**：编写 `tests/test_scanner.py` 与 `tests/test_api.py`，构造包含真实风险特征（`.bat`、`C:\Users\...`、`/Users/...`、`sk-` 密钥、`.env`）与占位符样本的临时仓库，验证召回率、脱敏逻辑与总分封顶规则。

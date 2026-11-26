@@ -4,7 +4,7 @@
 面向研发团队与平台接入方的 **Git 仓库接入前自动化体检工具**，在拉取或部署外部/历史仓库前快速评估可运行性、跨平台兼容性与安全风险。
 
 ## 2. 功能需求
-1. **仓库输入**：支持用户输入公开 Git 仓库 URL（优先支持 GitHub，兼容 GitLab/Gitee HTTPS 链接），并提供示例仓库一键体检。
+1. **仓库输入**：支持用户输入公开 Git 仓库 URL（优先支持 GitHub，兼容 GitLab/Gitee HTTPS 链接，自动剥离 `/tree/` 或 `/blob/` 网页路径）。
 2. **四大维度扫描**：
    - **完整度检查**：README 存在性与内容关键章节（安装/运行/环境变量）、依赖清单（`package.json`/`requirements.txt`/`pyproject.toml`/`go.mod`/`Cargo.toml`/`pom.xml` 等）、启动脚本或容器配置（`Dockerfile`/`docker-compose.yml`/`Makefile`/`start.sh`/`package.json scripts`）。
    - **Windows 专用脚本**：识别 `.bat`、`.cmd`、`.ps1`、`.vbs` 文件及脚本中的 Windows 专属命令。
