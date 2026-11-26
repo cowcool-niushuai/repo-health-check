@@ -12,7 +12,7 @@
 ![Tests](https://img.shields.io/badge/pytest-16%20passed-1E7A60)
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-check.cowcoll.top-0969DA)](https://check.cowcoll.top)
 
-**[🔗 在线体验（https://check.cowcoll.top）](https://check.cowcoll.top)** · [快速开始](#-快速开始) · [核心能力](#-核心能力) · [评分模型](#-评分体系) · [更新跟踪设计](#-更新跟踪设计说明) · [AI 使用记录](./AI_USAGE.md)
+**[🔗 在线体验（https://check.cowcoll.top）](https://check.cowcoll.top)** · [快速开始](#-快速开始) · [核心能力](#-核心能力) · [评分模型](#-评分体系) · [更新跟踪设计](#-更新跟踪设计说明) · [提示词记录](./docs/PROMPTS.md)
 
 </div>
 
@@ -114,9 +114,7 @@ repo-health-check/
 ├── docs/
 │   ├── PRD.md            # 需求文档
 │   ├── 模块地图.md        # 模块依赖关系
-│   ├── PROMPTS.md        # Vibe Coding 提示词记录
-│   └── 错误台账.md        # 开发排障与误报调优记录
-├── AI_USAGE.md           # AI 工具使用、验证方法与「AI 答错纠错」记录
+│   └── PROMPTS.md        # Vibe Coding 提示词记录
 ├── Dockerfile
 ├── .dockerignore        # 排除 .venv/.git/.env，避免本地密钥被打进镜像
 ├── docker-compose.yml
@@ -169,9 +167,6 @@ flowchart LR
 
 ---
 
-## 🤖 AI 辅助开发与验证
+## 🤖 Vibe Coding 提示词记录
 
-本项目在开发与自测过程中使用了 AI Coding 助手，并针对真实开源仓库进行了多轮人工审查与纠偏，完整记录见：
-- [AI_USAGE.md](./AI_USAGE.md)：AI 工具分工、验证方式与真实「AI 答错但被发现」记录
-- [docs/PROMPTS.md](./docs/PROMPTS.md)：核心开发阶段提示词摘要
-- [docs/错误台账.md](./docs/错误台账.md)：误报校准与缺陷修复台账
+本项目在开发与自测过程中的核心提示词摘要见：[docs/PROMPTS.md](./docs/PROMPTS.md)
